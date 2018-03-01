@@ -1,149 +1,71 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
-using System.Runtime.InteropServices;
+using System.Linq;
+
+using Spi;
 
 namespace rm
 {
     class Program
     {
-        [Flags]
-        public enum FileAttributes : uint
-        {
-            Readonly = 0x00000001,
-            Hidden = 0x00000002,
-            System = 0x00000004,
-            Directory = 0x00000010,
-            Archive = 0x00000020,
-            Device = 0x00000040,
-            Normal = 0x00000080,
-            Temporary = 0x00000100,
-            SparseFile = 0x00000200,
-            ReparsePoint = 0x00000400,
-            Compressed = 0x00000800,
-            Offline = 0x00001000,
-            NotContentIndexed = 0x00002000,
-            Encrypted = 0x00004000,
-            Write_Through = 0x80000000,
-            Overlapped = 0x40000000,
-            NoBuffering = 0x20000000,
-            RandomAccess = 0x10000000,
-            SequentialScan = 0x08000000,
-            DeleteOnClose = 0x04000000,
-            BackupSemantics = 0x02000000,
-            PosixSemantics = 0x01000000,
-            OpenReparsePoint = 0x00200000,
-            OpenNoRecall = 0x00100000,
-            FirstPipeInstance = 0x00080000
-        }
-
-        [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        static extern bool DeleteFileW([MarshalAs(UnmanagedType.LPWStr)]string lpFileName);
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        static extern uint GetFileAttributes(string lpFileName);
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        static extern bool SetFileAttributes(string lpFileName, [MarshalAs(UnmanagedType.U4)] FileAttributes dwFileAttributes);
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        static extern bool SetFileAttributes(string lpFileName, uint dwFileAttributes);
-
-        static string CheckArgs(string[] args)
-        {
-            if (args.Length != 1 )
-            {
-                Usage();
-                return null;
-            }
-            if ( !File.Exists(args[0]) )
-            {
-                Console.Error.WriteLine("E: file [{0}] does not exist", args[0]);
-                return null;
-            }
-            return args[0];
-        }
         static void Usage()
         {
             Console.Error.WriteLine("usage: rm {Unicodefile with one filename per line}");
         }
         static int Main(string[] args)
         {
-            string Filename;
-            if ((Filename=CheckArgs(args)) == null)
+            Opts opts;
+            if ((opts=CommandlineOpts.GetOpts(args)) == null)
             {
                 return 1;
             }
+
+            IEnumerable<string> FullFilenames = MakeFilenames(Misc.ReadLines(opts.FilenameWithFiles), opts.baseDirectory);
             bool hasErrors = false;
-            using ( TextReader tr = new StreamReader(Filename) )
+            if (opts.dryrun)
             {
-                string line;
-                while ( (line=tr.ReadLine()) != null)
+                foreach (string FullFilename in FullFilenames)
                 {
-                    if ( String.IsNullOrEmpty(line))
+                    Console.Out.WriteLine($"would delete [{FullFilename}]");
+                }
+            }
+            else
+            {
+                ulong deleted, notFound, error; deleted = notFound = error = 0;
+                using (var delWriter = new ConsoleAndFileWriter(@".\rmDeleted.txt"))
+                using (var notFoundWriter = new ConsoleAndFileWriter(@".\rmNotFound.txt"))
+                using (var errorWriter = new ConsoleAndFileWriter(@".\rmError.txt"))
+                {
+                    hasErrors = RemoveFiles.Run(FullFilenames,
+                        OnDeleted: filename =>                    { delWriter.WriteLine(filename);                               deleted += 1; },
+                        OnNotFound: filename =>                   { notFoundWriter.WriteLine(filename);                          notFound += 1; },
+                        OnError: (LastErrorCode, Api, Message) => { errorWriter.WriteLine($"{LastErrorCode}\t{Api}\t{Message}"); error += 1; }
+                        );
+                    Console.Error.WriteLine($"deleted: {deleted}, notfound: {notFound}, errors: {error}");
+                }
+            }
+            
+            return hasErrors ? 99 : 0;
+        }
+        private static IEnumerable<string> MakeFilenames(IEnumerable<string> filenames, string baseDirectory)
+        {
+            string LongBaseDir = String.IsNullOrEmpty(baseDirectory) ? 
+                null : Misc.GetLongFilenameNotation(baseDirectory);
+
+            return
+                filenames
+                .Select(l =>
+                {
+                    if (String.IsNullOrEmpty(LongBaseDir))
                     {
-                        continue;
-                    }
-                    if ( DeleteFileW(line) )
-                    {
-                        Console.Out.WriteLine("I: deleted [{0}]", line);
+                        return Misc.GetLongFilenameNotation(l);
                     }
                     else
                     {
-                        int LastError = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
-
-                        if (LastError == 2) // file not found
-                        {
-                            Console.Error.WriteLine("W: file not found [{0}]", line);
-                        }
-                        else
-                        {
-                            if (!ClearReadonlyFlag(line))
-                            {
-                                hasErrors = true;
-                                //Console.Error.WriteLine("attribute readonly could not be removed [{0}]", line);
-                            }
-                            else
-                            {
-                                if ( !DeleteFileW(line) )
-                                {
-                                    hasErrors = true;
-                                    Console.Error.WriteLine("E: rc [{0}] DeleteFile [{1}] after removing the readonly flag the file could still not be deleted",
-                                        System.Runtime.InteropServices.Marshal.GetLastWin32Error(),
-                                        line);
-                                }
-                            }
-                        }
+                        return Path.Combine(LongBaseDir, l);
                     }
-                }
-            }
-            return hasErrors ? 2 : 0;
-        }
-        static bool ClearReadonlyFlag(string filename)
-        {
-            uint CurrFlags = GetFileAttributes(filename);
-            if (CurrFlags == uint.MaxValue) // 0xFFFF filename == INVALID_FILE_ATTRIBUTES
-            {
-                Console.Error.WriteLine("E: rc [{0}] GetFileAttributes [{1}]",
-                    System.Runtime.InteropServices.Marshal.GetLastWin32Error(),
-                    filename);
-                return false;
-            }
-
-            bool isReadonly =   (CurrFlags & (uint)FileAttributes.Readonly)   != 0;
-            bool isSystem =     (CurrFlags & (uint)FileAttributes.System)     != 0;
-            bool isHidden =     (CurrFlags & (uint)FileAttributes.Hidden)     != 0;
-
-            uint NewFlags = CurrFlags & (~(uint)FileAttributes.Readonly);       // clear out the readonly flag
-            if ( ! SetFileAttributes(filename, NewFlags) )
-            {
-                Console.Error.WriteLine("E: rc [{0}] SetFileAttributes [{1}]",
-                    System.Runtime.InteropServices.Marshal.GetLastWin32Error(),
-                    filename);
-                return false;
-            }
-
-            return true;
+                });
         }
     }
 }
