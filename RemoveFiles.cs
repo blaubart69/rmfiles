@@ -39,7 +39,11 @@ namespace rm
                         }
                         else
                         {
-                            if (!Native.DeleteFileW(FullFilename))
+                            if (Native.DeleteFileW(FullFilename))
+                            {
+                                OnDeleted?.Invoke(FullFilename);
+                            }
+                            else
                             {
                                 ErrorOccured = true;
                                 Console.Error.WriteLine("E: rc [{0}] DeleteFile [{1}] after removing the readonly flag the file could still not be deleted",
