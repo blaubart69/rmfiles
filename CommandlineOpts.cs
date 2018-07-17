@@ -27,8 +27,8 @@ namespace rm
             Opts tmpOpts = new Opts();
             Opts resultOpts = null;
             var p = new Mono.Options.OptionSet() {
-                { "b|basedir=", "prints out little statistics",             v => tmpOpts.baseDirectory = v },
-                { "n|dryrun",  "show what would be deleted",                v => tmpOpts.dryrun = (v != null) },
+                { "b|basedir=", "appends this basedir to all filenames in the file",             v => tmpOpts.baseDirectory = v },
+                { "n|dryrun",   "show what would be deleted",                v => tmpOpts.dryrun = (v != null) },
                 { "h|help",     "show this message and exit",               v => show_help = v != null }            };
 
             try
