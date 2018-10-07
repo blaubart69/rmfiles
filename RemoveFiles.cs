@@ -15,47 +15,51 @@ namespace rm
             bool ErrorOccured = false;
             foreach (string FullFilename in FullFilenames)
             {
-                if (String.IsNullOrEmpty(FullFilename))
+                ErrorOccured = RemoveFile(FullFilename, OnDeleted, OnNotFound, OnError, ErrorOccured);
+            }
+            return ErrorOccured;
+        }
+
+        private static bool RemoveFile(string FullFilename, Action<string> OnDeleted, Action<string> OnNotFound, Action<int, string, string> OnError, bool ErrorOccured)
+        {
+            if (Native.DeleteFileW(FullFilename))
+            {
+                OnDeleted?.Invoke(FullFilename);
+            }
+            else
+            {
+                int LastError = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+                if (LastError == 2) // file not found
                 {
-                    continue;
-                }
-                if (Native.DeleteFileW(FullFilename))
-                {
-                    OnDeleted?.Invoke(FullFilename);
+                    OnNotFound?.Invoke(FullFilename);
                 }
                 else
                 {
-                    int LastError = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
-                    if (LastError == 2) // file not found
+                    if (!ClearReadonlyFlag(FullFilename, OnError))
                     {
-                        OnNotFound?.Invoke(FullFilename);
+                        ErrorOccured = true;
+                        //Console.Error.WriteLine("attribute readonly could not be removed [{0}]", line);
                     }
                     else
                     {
-                        if (!ClearReadonlyFlag(FullFilename, OnError))
+                        if (Native.DeleteFileW(FullFilename))
                         {
-                            ErrorOccured = true;
-                            //Console.Error.WriteLine("attribute readonly could not be removed [{0}]", line);
+                            OnDeleted?.Invoke(FullFilename);
                         }
                         else
                         {
-                            if (Native.DeleteFileW(FullFilename))
-                            {
-                                OnDeleted?.Invoke(FullFilename);
-                            }
-                            else
-                            {
-                                ErrorOccured = true;
-                                Console.Error.WriteLine("E: rc [{0}] DeleteFile [{1}] after removing the readonly flag the file could still not be deleted",
-                                    System.Runtime.InteropServices.Marshal.GetLastWin32Error(),
-                                    FullFilename);
-                            }
+                            ErrorOccured = true;
+                            Console.Error.WriteLine("E: rc [{0}] DeleteFile [{1}] after removing the readonly flag the file could still not be deleted",
+                                System.Runtime.InteropServices.Marshal.GetLastWin32Error(),
+                                FullFilename);
                         }
                     }
                 }
             }
+
             return ErrorOccured;
         }
+
         static bool ClearReadonlyFlag(string filename, Action<int,string,string> OnError)
         {
             uint CurrFlags = Native.GetFileAttributes(filename);

@@ -16,12 +16,13 @@ namespace rm
         static int Main(string[] args)
         {
             Opts opts;
-            if ((opts=CommandlineOpts.GetOpts(args)) == null)
+            if ((opts = CommandlineOpts.GetOpts(args)) == null)
             {
                 return 1;
             }
 
-            IEnumerable<string> FullFilenames = MakeFilenames(Misc.ReadLines(opts.FilenameWithFiles), opts.baseDirectory);
+            IEnumerable<string> FullFilenames = CreateFilenames(opts.FilenameWithFiles, opts.baseDirectory);
+
             bool hasErrors = false;
             if (opts.dryrun)
             {
@@ -38,34 +39,36 @@ namespace rm
                 using (var errorWriter = new ConsoleAndFileWriter(@".\rmError.txt"))
                 {
                     hasErrors = RemoveFiles.Run(FullFilenames,
-                        OnDeleted: filename =>                    { delWriter.WriteLine(filename);                               deleted += 1; },
-                        OnNotFound: filename =>                   { notFoundWriter.WriteLine(filename);                          notFound += 1; },
+                        OnDeleted: filename => { delWriter.WriteLine(filename); deleted += 1; },
+                        OnNotFound: filename => { notFoundWriter.WriteLine(filename); notFound += 1; },
                         OnError: (LastErrorCode, Api, Message) => { errorWriter.WriteLine($"{LastErrorCode}\t{Api}\t{Message}"); error += 1; }
                         );
                     Console.Error.WriteLine($"deleted: {deleted}, notfound: {notFound}, errors: {error}");
                 }
             }
-            
+
             return hasErrors ? 99 : 0;
         }
-        private static IEnumerable<string> MakeFilenames(IEnumerable<string> filenames, string baseDirectory)
-        {
-            string LongBaseDir = String.IsNullOrEmpty(baseDirectory) ? 
-                null : Misc.GetLongFilenameNotation(baseDirectory);
 
-            return
-                filenames
-                .Select(l =>
-                {
-                    if (String.IsNullOrEmpty(LongBaseDir))
-                    {
-                        return Misc.GetLongFilenameNotation(l);
-                    }
-                    else
-                    {
-                        return Path.Combine(LongBaseDir, l);
-                    }
-                });
+        private static IEnumerable<string> CreateFilenames(String inputfilename, string basedir)
+        {
+            IEnumerable<string> FilenameFromInputfile =
+                            Misc.ReadLines(inputfilename)
+                            .Select(line => Misc.GetLastTsvColumn(line));
+
+            IEnumerable<string> FullFilenames = null;
+
+            if (!String.IsNullOrEmpty(basedir))
+            {
+                string LongBase = Misc.GetLongFilenameNotation(basedir);
+                FullFilenames = FilenameFromInputfile.Select(filename => Path.Combine(LongBase, filename));
+            }
+            else
+            {
+                FullFilenames = FilenameFromInputfile;
+            }
+
+            return FullFilenames;
         }
     }
 }
