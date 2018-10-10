@@ -15,7 +15,7 @@ namespace rm
     {
         static void ShowHelp(Mono.Options.OptionSet p)
         {
-            Console.WriteLine("Usage: rm {filename} [OPTINS]");
+            Console.WriteLine("Usage: rm {filename} [OPTIONS]");
             Console.WriteLine("removes files given in a file");
             Console.WriteLine();
             Console.WriteLine("Options:");
