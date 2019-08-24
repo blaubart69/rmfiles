@@ -663,31 +663,6 @@ namespace Mono.Options
         }
     }
 
-    public class ResponseFileSource : ArgumentSource
-    {
-
-        public override string[] GetNames()
-        {
-            return new string[] { "@file" };
-        }
-
-        public override string Description
-        {
-            get { return "Read response file for more options."; }
-        }
-
-        public override bool GetArguments(string value, out IEnumerable<string> replacement)
-        {
-            if (string.IsNullOrEmpty(value) || !value.StartsWith("@"))
-            {
-                replacement = null;
-                return false;
-            }
-            replacement = ArgumentSource.GetArgumentsFromFile(value.Substring(1));
-            return true;
-        }
-    }
-
     [Serializable]
     public class OptionException : Exception
     {
@@ -772,21 +747,7 @@ namespace Mono.Options
             throw new InvalidOperationException("Option has no names!");
         }
 
-        [Obsolete("Use KeyedCollection.this[string]")]
-        protected Option GetOptionForName(string option)
-        {
-            if (option == null)
-                throw new ArgumentNullException("option");
-            try
-            {
-                return base[option];
-            }
-            catch (KeyNotFoundException)
-            {
-                return null;
-            }
-        }
-
+  
         protected override void InsertItem(int index, Option item)
         {
             base.InsertItem(index, item);
